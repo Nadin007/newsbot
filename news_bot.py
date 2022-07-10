@@ -1,11 +1,9 @@
-from email.mime import image
 import os
-from telegram import Bot, ReplyKeyboardMarkup
-from telegram.ext import Updater, Filters, MessageHandler, CommandHandler
+from telegram import Bot, ReplyKeyboardMarkup, Update
+from telegram.ext import Application, filters, MessageHandler, CommandHandler, ContextTypes
 from dotenv import load_dotenv
-import requests
+import httpx
 import time
-import asyncio
 from html_parser import parse
 
 
@@ -18,19 +16,21 @@ URL_YAHOO = os.getenv('YAHOO_URL')
 bot = Bot(token=TELEGRAM_TOKEN)
 
 
-def weather_forecast():
+async def weather_forecast():
     querystring = {"aggregateHours":"24","location":"Toronto,ca","contentType":"json","unitGroup":"us","shortColumnNames":"0"}
     headers = {
         "X-RapidAPI-Key": "61009a916bmsh83fbaf5cb967a55p1e2a76jsnd88782f867f3",
         "X-RapidAPI-Host": "visual-crossing-weather.p.rapidapi.com"
     }
     try:
-        response = requests.request("GET", URL_WEATHER, headers=headers, params=querystring)
+        async with httpx.AsyncClient() as client:
+            response = await client.request("GET", URL_WEATHER, headers=headers, params=querystring)
         print(response.json()['locations']['Toronto,ca']['currentConditions'])
     except Exception as error:
         print(error)
         new_url = URL_WEATHER
-        response = requests.request("GET", new_url, headers=headers, params=querystring)
+        async with httpx.AsyncClient() as client:
+            response = await client.request("GET", new_url, headers=headers, params=querystring)
     response = response.json()['locations']['Toronto,ca']['currentConditions']
     temperature = round((float(response['temp']) - 32) * (5 / 9), 0)
     visibility = response['visibility']
@@ -47,50 +47,55 @@ def weather_forecast():
     return weather_response
 
 
-def get_forecast(update, context):
+async def get_forecast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
-    context.bot.send_message(
-        chat.id, weather_forecast()
+    await context.bot.send_message(
+        chat.id, await weather_forecast()
     )
 
 
-def new_img():
+async def new_img():
     try:
-        response_1 = requests.get(URL)
+        async with httpx.AsyncClient() as client:
+            response = await client.get(URL)
     except Exception as error:
         print(error)
         new_url = 'https://api.thedogapi.com/v1/images/search'
-        response_1 = requests.get(new_url)
-    response_1 = response_1.json()
-    random_cat_url = response_1[0].get('url')
+        async with httpx.AsyncClient() as client:
+            response = client.get(new_url)
+    response_json = response.json()
+    random_cat_url = response_json[0].get('url')
     return random_cat_url
 
 
-def get_cat(update, context):
+async def get_cat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
-    context.bot.send_photo(
-        chat.id, new_img()
+    await context.bot.send_photo(
+        chat.id, await new_img()
     )
 
 
-def handler_message(update, context):
+async def handler_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Get info from chat and save it in new variable.
     chat = update.effective_chat
-    context.bot.send_message(chat_id=chat.id,
-                             text='Hi, I am a news Bot! I am ready to feet you with the hottest news.')
+    await context.bot.send_message(
+        chat_id=chat.id,
+        text='Hi, I am a news Bot! I am ready to feet you with the hottest news.')
 
 
-def yahoo_news(update, context):
+async def yahoo_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     try:
-        soup = parse(URL_YAHOO)
-        print(soup)
+        async with httpx.AsyncClient() as client:
+            html_text = (await client.get(URL_YAHOO)).text
+        soup = parse(html_text)
     except Exception as error:
         raise Exception(f'You have a problem here - {error}!')
-    context.bot.send_message(chat_id=chat.id, text=[el for el in soup])
+    for el in soup:
+        await context.bot.send_message(chat_id=chat.id, text=el)
 
 
-def news(update, context):
+async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # In response to the /news command
     #  will appear another buttons with sites you want
     # see news
@@ -101,12 +106,13 @@ def news(update, context):
             ['Dailymail', 'CNN'],
             ['BBS', 'Yahoo!']
         ])
-    context.bot.send_message(chat_id=chat.id,
-                             text='{}, please choose the sourse you want to see news from'.format(name),
-                             reply_markup=buttons)
+    await context.bot.send_message(
+        chat_id=chat.id,
+        text='{}, please choose the sourse you want to see news from'.format(name),
+        reply_markup=buttons)
 
 
-def wake_up(update, context):
+async def wake_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # In response to the /start command
     #  will send the message 'Thank you for turning me on'
     chat = update.effective_chat
@@ -116,25 +122,25 @@ def wake_up(update, context):
             ['/weater', 'order a pancake'],
             ['/news', '/want_smth_cute']
         ])
-    context.bot.send_message(chat_id=chat.id,
-                             text='Thank you for turning me on {}'.format(name),
-                             reply_markup=buttons)
+    await context.bot.send_message(
+        chat_id=chat.id,
+        text='Thank you for turning me on {}'.format(name),
+        reply_markup=buttons)
 
 
 def main():
-    updater = Updater(token=TELEGRAM_TOKEN)
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
     # chat_id = CHAT_ID
     var = ['Yahoo!']
-    updater.dispatcher.add_handler(CommandHandler('start', wake_up))
-    updater.dispatcher.add_handler(CommandHandler('want_smth_cute', get_cat))
-    updater.dispatcher.add_handler(CommandHandler('weater', get_forecast))
-    updater.dispatcher.add_handler(CommandHandler('news', news))
-    updater.dispatcher.add_handler(MessageHandler(Filters.text(var), yahoo_news))
-    updater.dispatcher.add_handler(MessageHandler(Filters.text, handler_message))
+    application.add_handler(CommandHandler('start', wake_up))
+    application.add_handler(CommandHandler('want_smth_cute', get_cat))
+    application.add_handler(CommandHandler('weater', get_forecast))
+    application.add_handler(CommandHandler('news', news))
+    application.add_handler(MessageHandler(filters.Text(var), yahoo_news))
+    application.add_handler(MessageHandler(filters.Text(), handler_message))
 
-    updater.start_polling(poll_interval=5.0)
     '''The bot will work until you press Ctrl-C'''
-    updater.idle()
+    application.run_polling(poll_interval=5.0)
 
 
 if __name__ == '__main__':

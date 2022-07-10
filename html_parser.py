@@ -7,18 +7,14 @@ from bs4 import BeautifulSoup
 vgm_url = 'https://ca.news.yahoo.com'
 
 
-def parse(vgm_url):
-    html_text = requests.get(vgm_url).text
+def parse(html_text):
     soup = BeautifulSoup(html_text, 'html.parser')
     semi_results = soup.find(id='item-0')
-    all_imgs = [img["src"] for img in semi_results.select("img")]
+    _ = [img["src"] for img in semi_results.select("img")]
     news_link = ([
         link["href"] if link["href"][0:3] == 'http' else 'https://ca.style.yahoo.com' + link["href"] for link in semi_results.select("a", class_='js-content-viewer')])
-    texts = [result.text for result in semi_results.select("a", class_='js-content-viewer')]
-    result = []
-    for el in range(len(all_imgs)):
-        result += [all_imgs[el], news_link[el], texts[el]]
-    return result
+    _ = [result.text for result in semi_results.select("a", class_='js-content-viewer')]
+    return news_link
 
 
 def download_track(count, track_element):

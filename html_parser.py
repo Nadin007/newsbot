@@ -3,7 +3,6 @@ import re
 import requests
 from bs4 import BeautifulSoup
 
-
 vgm_url = 'https://ca.news.yahoo.com'
 
 
